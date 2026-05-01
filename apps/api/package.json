@@ -12,11 +12,11 @@
     "@fastify/cookie": "latest",
     "@fastify/cors": "latest",
     "@fastify/jwt": "latest",
+    "@prisma/client": "5",
     "bcryptjs": "latest",
     "dotenv": "latest",
     "fastify": "latest",
-    "prisma": "latest",
-    "@prisma/client": "latest",
+    "prisma": "5",
     "zod": "latest"
   },
   "devDependencies": {

@@ -1,13 +1,72 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PROCTOR
+  CANDIDATE
+}
+
+model Organisation {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  exams     Exam[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  password       String
+  name           String
+  role           Role         @default(CANDIDATE)
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  organisationId String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  sessions       Session[]
+}
+
+model Exam {
+  id             String       @id @default(cuid())
+  title          String
+  description    String?
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  organisationId String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  sessions       Session[]
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  candidate   User      @relation(fields: [candidateId], references: [id])
+  candidateId String
+  exam        Exam      @relation(fields: [examId], references: [id])
+  examId      String
+  riskScore   Int       @default(0)
+  flagCount   Int       @default(0)
+  absentTime  Int       @default(0)
+  status      String    @default("active")
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  events      Event[]
+}
+
+model Event {
+  id        String   @id @default(cuid())
+  session   Session  @relation(fields: [sessionId], references: [id])
+  sessionId String
+  type      String
+  severity  String
+  message   String
+  timestamp DateTime @default(now())
 }
