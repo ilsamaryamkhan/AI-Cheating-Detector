@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useFaceDetection } from '../../hooks/useFaceDetection'
+import { useKeystrokeDetection } from '../../hooks/useKeystrokeDetection'
 import { createSession, logEvent, endSession } from '../../lib/api'
 
 type User = {
@@ -33,6 +34,12 @@ export default function ExamPage() {
     phase === 'active'
   )
 
+  const { events: keystrokeEvents } = useKeystrokeDetection(phase === 'active')
+
+  const allEvents = [...events, ...keystrokeEvents].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  )
+
   useEffect(() => {
     const stored = localStorage.getItem('user')
     const token = localStorage.getItem('token')
@@ -46,7 +53,6 @@ export default function ExamPage() {
       createSession('demo-exam-001').then(data => {
         if (data.session) {
           setSessionId(data.session.id)
-          console.log('Session created:', data.session.id)
         }
       })
     }
@@ -64,10 +70,9 @@ export default function ExamPage() {
     }
   }, [phase])
 
-  // Save events to database as they come in
+  // Save face events to database
   useEffect(() => {
     if (!sessionId || events.length === 0) return
-
     events.forEach(event => {
       const key = `${event.type}-${event.timestamp}`
       if (!processedEvents.current.has(key)) {
@@ -85,21 +90,37 @@ export default function ExamPage() {
     })
   }, [events, sessionId])
 
-  // Update risk score locally too
+  // Save keystroke events to database
   useEffect(() => {
-    const highEvents = events.filter(e => e.severity === 'HIGH').length
-    const medEvents = events.filter(e => e.severity === 'MEDIUM').length
+    if (!sessionId || keystrokeEvents.length === 0) return
+    keystrokeEvents.forEach(event => {
+      const key = `${event.type}-${event.timestamp}`
+      if (!processedEvents.current.has(key)) {
+        processedEvents.current.add(key)
+        logEvent(sessionId, {
+          type: event.type,
+          severity: event.severity,
+          message: event.message,
+        })
+      }
+    })
+  }, [keystrokeEvents, sessionId])
+
+  // Update risk score
+  useEffect(() => {
+    const highEvents = allEvents.filter(e => e.severity === 'HIGH').length
+    const medEvents = allEvents.filter(e => e.severity === 'MEDIUM').length
     const absScore = Math.min(absenceSeconds * 2, 40)
     const flagScore = Math.min(highEvents * 15 + medEvents * 5, 60)
     setRiskScore(Math.min(absScore + flagScore, 100))
-  }, [events, absenceSeconds])
+  }, [events, keystrokeEvents, absenceSeconds])
 
   const handleEndSession = async () => {
     setSaving(true)
     if (sessionId) {
       await endSession(sessionId, {
         riskScore,
-        flagCount: events.filter(e => e.severity === 'HIGH').length,
+        flagCount: allEvents.filter(e => e.severity === 'HIGH').length,
         absentTime: absenceSeconds,
       })
     }
@@ -172,7 +193,7 @@ export default function ExamPage() {
 
   // Ended screen
   if (phase === 'ended') {
-    const flagCount = events.filter(e => e.severity === 'HIGH').length
+    const flagCount = allEvents.filter(e => e.severity === 'HIGH').length
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl border border-gray-200 p-8 max-w-md w-full text-center">
@@ -311,12 +332,12 @@ export default function ExamPage() {
 
           <div className="flex-1 overflow-hidden flex flex-col px-3 pb-3">
             <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">
-              Events ({events.length})
+              Events ({allEvents.length})
             </p>
             <div className="flex-1 overflow-y-auto space-y-1.5">
-              {events.length === 0 ? (
+              {allEvents.length === 0 ? (
                 <p className="text-xs text-gray-600 text-center py-4">No events yet</p>
-              ) : events.map((event, i) => (
+              ) : allEvents.map((event, i) => (
                 <div key={i} className={`p-2 rounded-lg text-xs ${
                   event.severity === 'HIGH' ? 'bg-red-900/30 border border-red-800' :
                   event.severity === 'MEDIUM' ? 'bg-yellow-900/30 border border-yellow-800' :
