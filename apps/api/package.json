@@ -17,6 +17,7 @@
     "dotenv": "latest",
     "fastify": "latest",
     "prisma": "5",
+    "socket.io": "^4.8.3",
     "zod": "latest"
   },
   "devDependencies": {
