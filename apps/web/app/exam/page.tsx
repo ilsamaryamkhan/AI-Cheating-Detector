@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useFaceDetection } from '../../hooks/useFaceDetection'
+import { createSession, logEvent, endSession } from '../../lib/api'
 
 type User = {
   id: string
@@ -20,7 +21,11 @@ export default function ExamPage() {
   const [phase, setPhase] = useState<'consent' | 'active' | 'ended'>('consent')
   const [elapsed, setElapsed] = useState(0)
   const [riskScore, setRiskScore] = useState(0)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const processedEvents = useRef<Set<string>>(new Set())
 
   const { status, events, absenceSeconds } = useFaceDetection(
     videoRef,
@@ -35,6 +40,19 @@ export default function ExamPage() {
     setUser(JSON.parse(stored))
   }, [])
 
+  // Start session when exam becomes active
+  useEffect(() => {
+    if (phase === 'active' && !sessionId) {
+      createSession('demo-exam-001').then(data => {
+        if (data.session) {
+          setSessionId(data.session.id)
+          console.log('Session created:', data.session.id)
+        }
+      })
+    }
+  }, [phase, sessionId])
+
+  // Start timer
   useEffect(() => {
     if (phase === 'active') {
       timerRef.current = setInterval(() => {
@@ -46,7 +64,28 @@ export default function ExamPage() {
     }
   }, [phase])
 
-  // Update risk score based on events
+  // Save events to database as they come in
+  useEffect(() => {
+    if (!sessionId || events.length === 0) return
+
+    events.forEach(event => {
+      const key = `${event.type}-${event.timestamp}`
+      if (!processedEvents.current.has(key)) {
+        processedEvents.current.add(key)
+        logEvent(sessionId, {
+          type: event.type,
+          severity: event.severity,
+          message: event.message,
+        }).then(data => {
+          if (data.riskScore !== undefined) {
+            setRiskScore(data.riskScore)
+          }
+        })
+      }
+    })
+  }, [events, sessionId])
+
+  // Update risk score locally too
   useEffect(() => {
     const highEvents = events.filter(e => e.severity === 'HIGH').length
     const medEvents = events.filter(e => e.severity === 'MEDIUM').length
@@ -54,6 +93,19 @@ export default function ExamPage() {
     const flagScore = Math.min(highEvents * 15 + medEvents * 5, 60)
     setRiskScore(Math.min(absScore + flagScore, 100))
   }, [events, absenceSeconds])
+
+  const handleEndSession = async () => {
+    setSaving(true)
+    if (sessionId) {
+      await endSession(sessionId, {
+        riskScore,
+        flagCount: events.filter(e => e.severity === 'HIGH').length,
+        absentTime: absenceSeconds,
+      })
+    }
+    setSaving(false)
+    setPhase('ended')
+  }
 
   const fmtTime = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
@@ -83,7 +135,7 @@ export default function ExamPage() {
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Exam Monitoring Consent</h2>
           <p className="text-sm text-gray-500 mb-4">
-            This exam requires webcam monitoring to verify your presence. Please read the following:
+            This exam requires webcam monitoring to verify your presence.
           </p>
           <ul className="space-y-2 mb-6">
             {[
@@ -130,7 +182,9 @@ export default function ExamPage() {
             </svg>
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Exam Completed</h2>
-          <p className="text-sm text-gray-500 mb-6">Your session has ended. Results have been sent to your examiner.</p>
+          <p className="text-sm text-gray-500 mb-6">
+            Your session has ended. Results have been sent to your examiner.
+          </p>
           <div className="grid grid-cols-3 gap-3 mb-6">
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-xs text-gray-500">Duration</p>
@@ -145,6 +199,9 @@ export default function ExamPage() {
               <p className="text-lg font-bold text-gray-900">{flagCount}</p>
             </div>
           </div>
+          {sessionId && (
+            <p className="text-xs text-gray-400 mb-4">Session ID: {sessionId}</p>
+          )}
           <button
             onClick={() => router.push('/candidate')}
             className="w-full py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-700"
@@ -156,27 +213,26 @@ export default function ExamPage() {
     )
   }
 
-  // Active exam screen
+  // Active exam
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
-      {/* Header */}
       <header className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-white font-semibold text-sm">atomcamp</span>
           <span className="text-gray-500 text-xs">|</span>
           <span className="text-gray-400 text-xs">Exam Session</span>
+          {sessionId && (
+            <span className="text-gray-600 text-xs font-mono">#{sessionId.slice(0, 8)}</span>
+          )}
         </div>
         <div className="flex items-center gap-4">
-          {/* Face status */}
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${statusConfig[status].color}`} />
             <span className="text-xs text-gray-400">{statusConfig[status].label}</span>
           </div>
-          {/* Timer */}
           <div className="bg-gray-700 px-3 py-1 rounded-lg">
             <span className="text-white text-sm font-mono">{fmtTime(elapsed)}</span>
           </div>
-          {/* Risk score */}
           <div className="flex items-center gap-2 bg-gray-700 px-3 py-1 rounded-lg">
             <span className="text-xs text-gray-400">Risk</span>
             <span className="text-sm font-bold" style={{ color: riskColor }}>{riskScore}</span>
@@ -186,11 +242,12 @@ export default function ExamPage() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Main exam area */}
         <main className="flex-1 p-6 overflow-y-auto">
           <div className="bg-gray-800 rounded-xl p-6 mb-4">
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">Question 1 of 10</span>
+              <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">
+                Question 1 of 10
+              </span>
             </div>
             <p className="text-white text-base mb-4">
               This is a sample exam question. In the real product, questions will be loaded from the database based on the assigned exam.
@@ -201,16 +258,16 @@ export default function ExamPage() {
               placeholder="Type your answer here..."
             />
           </div>
-
           <div className="flex justify-between">
             <button className="px-4 py-2 bg-gray-700 text-white rounded-lg text-sm hover:bg-gray-600">
               Previous
             </button>
             <button
-              onClick={() => setPhase('ended')}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+              onClick={handleEndSession}
+              disabled={saving}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50"
             >
-              Submit Exam
+              {saving ? 'Saving...' : 'Submit Exam'}
             </button>
             <button className="px-4 py-2 bg-gray-700 text-white rounded-lg text-sm hover:bg-gray-600">
               Next
@@ -218,9 +275,7 @@ export default function ExamPage() {
           </div>
         </main>
 
-        {/* Webcam sidebar */}
         <aside className="w-72 bg-gray-800 border-l border-gray-700 flex flex-col">
-          {/* Video */}
           <div className="p-3">
             <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Camera Feed</p>
             <div className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video">
@@ -235,7 +290,6 @@ export default function ExamPage() {
                 ref={canvasRef}
                 className="absolute inset-0 w-full h-full scale-x-[-1]"
               />
-              {/* Status badge */}
               <div className={`absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-white ${
                 status === 'present' ? 'bg-green-600' :
                 status === 'absent' ? 'bg-red-600' :
@@ -247,7 +301,6 @@ export default function ExamPage() {
             </div>
           </div>
 
-          {/* Absence counter */}
           {absenceSeconds > 0 && (
             <div className="mx-3 mb-3 bg-red-900/30 border border-red-700 rounded-lg p-2">
               <p className="text-xs text-red-400">
@@ -256,7 +309,6 @@ export default function ExamPage() {
             </div>
           )}
 
-          {/* Event log */}
           <div className="flex-1 overflow-hidden flex flex-col px-3 pb-3">
             <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">
               Events ({events.length})

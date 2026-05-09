@@ -4,6 +4,7 @@ import jwt from '@fastify/jwt'
 import cookie from '@fastify/cookie'
 import dotenv from 'dotenv'
 import { authRoutes } from './routes/auth'
+import { sessionRoutes } from './routes/sessions'
 
 dotenv.config()
 
@@ -11,10 +12,10 @@ const server = Fastify({
   logger: true,
 })
 
-// Register plugins
 server.register(cors, {
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 })
 
 server.register(jwt, {
@@ -27,6 +28,8 @@ server.register(cookie, {
 
 // Register routes
 server.register(authRoutes, { prefix: '/api' })
+
+server.register(sessionRoutes, { prefix: '/api' })
 
 // Health check
 server.get('/health', async (request, reply) => {
