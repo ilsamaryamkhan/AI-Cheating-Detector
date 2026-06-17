@@ -7,6 +7,7 @@ import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { authRoutes } from './routes/auth'
 import { sessionRoutes } from './routes/sessions'
+import { examRoutes } from './routes/exams'
 
 dotenv.config()
 
@@ -30,6 +31,7 @@ server.register(cookie, {
 // Register routes
 server.register(authRoutes, { prefix: '/api' })
 server.register(sessionRoutes, { prefix: '/api' })
+server.register(examRoutes, { prefix: '/api' })
 
 // Health check
 server.get('/health', async () => {

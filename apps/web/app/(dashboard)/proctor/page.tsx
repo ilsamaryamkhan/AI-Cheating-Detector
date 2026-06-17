@@ -1,5 +1,5 @@
 'use client'
-
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { io, Socket } from 'socket.io-client'
@@ -51,7 +51,7 @@ export default function ProctorDashboard() {
   useEffect(() => {
     if (!user) return
     const token = localStorage.getItem('token')
-    fetch('http://localhost:4000/api/sessions/proctor', {
+    fetch('${API_URL}/api/sessions/proctor', {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(res => res.json())
@@ -74,7 +74,7 @@ export default function ProctorDashboard() {
   useEffect(() => {
     if (!user) return
 
-    const newSocket = io('http://localhost:4000', {
+    const newSocket = io(API_URL, {
       transports: ['websocket', 'polling'],
     })
 
