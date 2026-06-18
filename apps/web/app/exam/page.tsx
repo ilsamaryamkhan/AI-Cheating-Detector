@@ -6,11 +6,19 @@ import { useFaceDetection } from '../../hooks/useFaceDetection'
 import { useKeystrokeDetection } from '../../hooks/useKeystrokeDetection'
 import { createSession, logEvent, endSession } from '../../lib/api'
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+
 type User = {
   id: string
   name: string
   email: string
   role: string
+}
+
+type Exam = {
+  id: string
+  title: string
+  description: string | null
 }
 
 export default function ExamPage() {
@@ -19,7 +27,11 @@ export default function ExamPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const [user, setUser] = useState<User | null>(null)
-  const [phase, setPhase] = useState<'consent' | 'active' | 'ended'>('consent')
+  const [phase, setPhase] = useState<'select' | 'consent' | 'active' | 'ended'>('select')
+  const [exams, setExams] = useState<Exam[]>([])
+  const [selectedExamId, setSelectedExamId] = useState<string>('')
+  const [selectedExamTitle, setSelectedExamTitle] = useState<string>('')
+  const [loadingExams, setLoadingExams] = useState(true)
   const [elapsed, setElapsed] = useState(0)
   const [riskScore, setRiskScore] = useState(0)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -47,16 +59,31 @@ export default function ExamPage() {
     setUser(JSON.parse(stored))
   }, [])
 
+  // Load exams
+  useEffect(() => {
+    if (!user) return
+    const token = localStorage.getItem('token')
+    fetch(`${API_URL}/api/exams`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.exams) setExams(data.exams)
+        setLoadingExams(false)
+      })
+      .catch(() => setLoadingExams(false))
+  }, [user])
+
   // Start session when exam becomes active
   useEffect(() => {
     if (phase === 'active' && !sessionId) {
-      createSession('demo-exam-001').then(data => {
+      createSession(selectedExamId).then(data => {
         if (data.session) {
           setSessionId(data.session.id)
         }
       })
     }
-  }, [phase, sessionId])
+  }, [phase, sessionId, selectedExamId])
 
   // Start timer
   useEffect(() => {
@@ -143,6 +170,61 @@ export default function ExamPage() {
 
   if (!user) return null
 
+  // Exam selection screen
+  if (phase === 'select') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl border border-gray-200 p-8 max-w-md w-full">
+          <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-4">
+            <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-1">Select Your Exam</h2>
+          <p className="text-sm text-gray-500 mb-6">
+            Welcome, {user.name}. Choose the exam you have been assigned.
+          </p>
+
+          {loadingExams ? (
+            <p className="text-sm text-gray-400 text-center py-4">Loading exams...</p>
+          ) : exams.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">No exams available. Contact your administrator.</p>
+          ) : (
+            <div className="space-y-2 mb-6">
+              {exams.map(exam => (
+                <button
+                  key={exam.id}
+                  onClick={() => {
+                    setSelectedExamId(exam.id)
+                    setSelectedExamTitle(exam.title)
+                  }}
+                  className={`w-full text-left p-4 rounded-xl border transition-all ${
+                    selectedExamId === exam.id
+                      ? 'border-gray-900 bg-gray-50 ring-2 ring-gray-900'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <p className="text-sm font-medium text-gray-900">{exam.title}</p>
+                  {exam.description && (
+                    <p className="text-xs text-gray-500 mt-0.5">{exam.description}</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setPhase('consent')}
+            disabled={!selectedExamId}
+            className="w-full py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Continue to Exam
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // Consent screen
   if (phase === 'consent') {
     return (
@@ -154,10 +236,9 @@ export default function ExamPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Exam Monitoring Consent</h2>
-          <p className="text-sm text-gray-500 mb-4">
-            This exam requires webcam monitoring to verify your presence.
-          </p>
+          <h2 className="text-xl font-semibold text-gray-900 mb-1">Exam Monitoring Consent</h2>
+          <p className="text-sm text-gray-500 mb-1">You are about to start:</p>
+          <p className="text-sm font-semibold text-gray-900 mb-4">{selectedExamTitle}</p>
           <ul className="space-y-2 mb-6">
             {[
               'Your webcam will be active during the entire exam',
@@ -174,10 +255,10 @@ export default function ExamPage() {
           </ul>
           <div className="flex gap-3">
             <button
-              onClick={() => router.push('/candidate')}
+              onClick={() => setPhase('select')}
               className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
             >
-              Decline
+              Back
             </button>
             <button
               onClick={() => setPhase('active')}
@@ -203,6 +284,7 @@ export default function ExamPage() {
             </svg>
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Exam Completed</h2>
+          <p className="text-sm font-medium text-gray-700 mb-1">{selectedExamTitle}</p>
           <p className="text-sm text-gray-500 mb-6">
             Your session has ended. Results have been sent to your examiner.
           </p>
@@ -241,7 +323,7 @@ export default function ExamPage() {
         <div className="flex items-center gap-3">
           <span className="text-white font-semibold text-sm">atomcamp</span>
           <span className="text-gray-500 text-xs">|</span>
-          <span className="text-gray-400 text-xs">Exam Session</span>
+          <span className="text-gray-400 text-xs">{selectedExamTitle}</span>
           {sessionId && (
             <span className="text-gray-600 text-xs font-mono">#{sessionId.slice(0, 8)}</span>
           )}
