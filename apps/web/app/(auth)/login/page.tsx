@@ -1,9 +1,10 @@
 'use client'
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -20,7 +21,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('${API_URL}/api/auth/login', {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -33,11 +34,9 @@ export default function LoginPage() {
         return
       }
 
-      // Save token and user to localStorage
       localStorage.setItem('token', data.token)
       localStorage.setItem('user', JSON.stringify(data.user))
 
-      // Redirect based on role
       const role = data.user.role
       if (role === 'ADMIN') router.push('/admin')
       else if (role === 'PROCTOR') router.push('/proctor')
