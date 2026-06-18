@@ -51,7 +51,7 @@ export default function ProctorDashboard() {
   useEffect(() => {
     if (!user) return
     const token = localStorage.getItem('token')
-    fetch('${API_URL}/api/sessions/proctor', {
+    fetch(`${API_URL}/api/sessions/proctor`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(res => res.json())
@@ -299,6 +299,10 @@ export default function ProctorDashboard() {
                         <p className="text-xs text-gray-500">Flags</p>
                         <p className="font-bold text-white">{session.flagCount}</p>
                       </div>
+                      <button
+                      onClick={() => router.push(`/report?session=${session.sessionId}`)}
+                      className="text-xs text-gray-400 hover:text-white border border-gray-700 px-2 py-1 rounded"
+                      >View Report</button>
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                         session.riskScore >= 70 ? 'bg-red-900/50 text-red-400' :
                         session.riskScore >= 40 ? 'bg-yellow-900/50 text-yellow-400' :
